@@ -1,14 +1,17 @@
 # -*- coding: utf-8 -*-
 """DenseNet models for Keras.
 
-# Reference paper:
+# Reference paper
 
-- [Densely Connected Convolutional Networks](https://arxiv.org/abs/1608.06993) (CVPR 2017 Best Paper Award)
+- [Densely Connected Convolutional Networks]
+  (https://arxiv.org/abs/1608.06993) (CVPR 2017 Best Paper Award)
 
-# Reference implementation:
+# Reference implementation
 
-- [Torch DenseNets](https://github.com/liuzhuang13/DenseNet/blob/master/models/densenet.lua)
-- [TensorNets](https://github.com/taehoonlee/tensornets/blob/master/tensornets/densenets.py)
+- [Torch DenseNets]
+  (https://github.com/liuzhuang13/DenseNet/blob/master/models/densenet.lua)
+- [TensorNets]
+  (https://github.com/taehoonlee/tensornets/blob/master/tensornets/densenets.py)
 """
 from __future__ import absolute_import
 from __future__ import division
@@ -24,7 +27,6 @@ from ..layers import BatchNormalization
 from ..layers import Concatenate
 from ..layers import Conv2D
 from ..layers import Dense
-from ..layers import Flatten
 from ..layers import GlobalAveragePooling2D
 from ..layers import Input
 from ..layers import MaxPooling2D
@@ -36,12 +38,12 @@ from .imagenet_utils import decode_predictions
 from .imagenet_utils import _obtain_input_shape
 
 
-DENSENET121_WEIGHT_PATH = 'https://github.com/taehoonlee/deep-learning-models/releases/download/densenet/densenet121_weights_tf_dim_ordering_tf_kernels.h5'
-DENSENET121_WEIGHT_PATH_NO_TOP = 'https://github.com/taehoonlee/deep-learning-models/releases/download/densenet/densenet121_weights_tf_dim_ordering_tf_kernels_notop.h5'
-DENSENET169_WEIGHT_PATH = 'https://github.com/taehoonlee/deep-learning-models/releases/download/densenet/densenet169_weights_tf_dim_ordering_tf_kernels.h5'
-DENSENET169_WEIGHT_PATH_NO_TOP = 'https://github.com/taehoonlee/deep-learning-models/releases/download/densenet/densenet169_weights_tf_dim_ordering_tf_kernels_notop.h5'
-DENSENET201_WEIGHT_PATH = 'https://github.com/taehoonlee/deep-learning-models/releases/download/densenet/densenet201_weights_tf_dim_ordering_tf_kernels.h5'
-DENSENET201_WEIGHT_PATH_NO_TOP = 'https://github.com/taehoonlee/deep-learning-models/releases/download/densenet/densenet201_weights_tf_dim_ordering_tf_kernels_notop.h5'
+DENSENET121_WEIGHT_PATH = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.8/densenet121_weights_tf_dim_ordering_tf_kernels.h5'
+DENSENET121_WEIGHT_PATH_NO_TOP = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.8/densenet121_weights_tf_dim_ordering_tf_kernels_notop.h5'
+DENSENET169_WEIGHT_PATH = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.8/densenet169_weights_tf_dim_ordering_tf_kernels.h5'
+DENSENET169_WEIGHT_PATH_NO_TOP = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.8/densenet169_weights_tf_dim_ordering_tf_kernels_notop.h5'
+DENSENET201_WEIGHT_PATH = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.8/densenet201_weights_tf_dim_ordering_tf_kernels.h5'
+DENSENET201_WEIGHT_PATH_NO_TOP = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.8/densenet201_weights_tf_dim_ordering_tf_kernels_notop.h5'
 
 
 def dense_block(x, blocks, name):
@@ -75,7 +77,7 @@ def transition_block(x, reduction, name):
     x = BatchNormalization(axis=bn_axis, epsilon=1.001e-5,
                            name=name + '_bn')(x)
     x = Activation('relu', name=name + '_relu')(x)
-    x = Conv2D(int(x._keras_shape[bn_axis] * reduction), 1, use_bias=False,
+    x = Conv2D(int(K.int_shape(x)[bn_axis] * reduction), 1, use_bias=False,
                name=name + '_conv')(x)
     x = AveragePooling2D(2, strides=2, name=name + '_pool')(x)
     return x

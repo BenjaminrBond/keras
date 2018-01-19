@@ -748,9 +748,11 @@ class ImageDataGenerator(object):
 
         if self.zca_whitening:
             flat_x = np.reshape(x, (x.shape[0], x.shape[1] * x.shape[2] * x.shape[3]))
-            sigma = np.dot(flat_x.T, flat_x) / flat_x.shape[0]
-            u, s, _ = linalg.svd(sigma)
-            self.principal_components = np.dot(np.dot(u, np.diag(1. / np.sqrt(s + self.zca_epsilon))), u.T)
+            num_examples = flat_x.shape[0]
+            _, s, vt = linalg.svd(flat_x / np.sqrt(num_examples))
+            s_expand = np.hstack((s, np.zeros(vt.shape[0] - num_examples,
+                                              dtype=flat_x.dtype)))
+            self.principal_components = (vt.T / np.sqrt(s_expand ** 2 + self.zca_epsilon)).dot(vt)
 
 
 class Iterator(Sequence):
@@ -940,10 +942,11 @@ class NumpyArrayIterator(Iterator):
 
 
 def _count_valid_files_in_directory(directory, white_list_formats, follow_links):
-    """Count files with extension in `white_list_formats` contained in a directory.
+    """Count files with extension in `white_list_formats` contained in directory.
 
     # Arguments
-        directory: absolute path to the directory containing files to be counted
+        directory: absolute path to the directory
+            containing files to be counted
         white_list_formats: set of strings containing allowed extensions for
             the files to be counted.
         follow_links: boolean.
@@ -956,7 +959,7 @@ def _count_valid_files_in_directory(directory, white_list_formats, follow_links)
         return sorted(os.walk(subpath, followlinks=follow_links), key=lambda tpl: tpl[0])
 
     samples = 0
-    for root, _, files in _recursive_list(directory):
+    for _, _, files in _recursive_list(directory):
         for fname in files:
             is_valid = False
             for extension in white_list_formats:
