@@ -183,6 +183,8 @@ class FlexibleSpacingConv1D(Layer):
         return dict(list(base_config.items()) + list(config.items()))
 
 
+
+
 class _Conv(Layer):
     """Abstract nD convolution layer (private, used as implementation base).
 

@@ -12,6 +12,29 @@ from ..utils import conv_utils
 from ..legacy import interfaces
 
 
+class MaxPool1DFilter(Layer):
+
+    def __init__(self, pool_size=10, **kwargs):
+        super(MaxPool1DFilter, self).__init__(**kwargs) ##In Python 3, can just do super().__init__(**kwargs)
+        self.pool_size = pool_size
+        self.input_spec = InputSpec(ndim=3) ##Here b/c copied _Pooling1D Constructer
+
+    def compute_output_shape(self, input_shape): ## we need to have all functions from API for a layer
+        return input_shape
+
+    def get_config(self):
+        config = {'pool_size': self.pool_size},
+        base_config = super(MaxPool1DFilter, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+    def call(self, inputs):
+        inputs = K.expand_dims(inputs, 2)   # add dummy last dimension
+        pool_output = K.pool2d(inputs, pool_size=(1+(2*self.pool_size),1), strides=(1,1),
+                          padding='same', data_format='channels_last', pool_mode='max')
+        filter_output = K.integer_equal(inputs, pool_output)*inputs	## Av had to change tensorflow backend to add integer_equal
+        return K.squeeze(filter_output, 2)  # remove dummy last dimension
+
+
 class _Pooling1D(Layer):
     """Abstract class for different pooling 1D layers.
     """
