@@ -33,13 +33,9 @@ class FlexibleSpacingConv1D(Layer):
                  pool_size,
                  padding='same',
                  data_format=None,
-                 activation=None,
-                 left_kernel_initializer='glorot_uniform',
-                 right_kernel_initializer='glorot_uniform',
-                 spacing_weight_kernel_initializer='glorot_uniform',
-                 left_bias_initializer='zeros',
-                 right_bias_initializer='zeros',
-                 spacing_weight_bias_initializer='zeros',
+                 activation= 'relu',
+                 kernel_initializer='glorot_uniform',
+                 bias_initializer='zeros',
                  kernel_regularizer=None,
                  bias_regularizer=None,
                  activity_regularizer=None,
@@ -53,11 +49,8 @@ class FlexibleSpacingConv1D(Layer):
         self.padding = conv_utils.normalize_padding(padding)
         self.data_format = conv_utils.normalize_data_format(data_format)
         self.activation = activations.get(activation)
-        self.left_kernel_initializer = initializers.get(left_kernel_initializer)
-        self.right_kernel_initializer = initializers.get(right_kernel_initializer)
-        self.spacing_weight_kernel_initializer = initializers.get(spacing_weight_kernel_initializer)
-        self.left_bias_initializer = initializers.get(left_bias_initializer)
-        self.right_bias_initializer = initializers.get(right_bias_initializer)
+        self.kernel_initializer = initializers.get(kernel_initializer)
+        self.bias_initializer = initializers.get(bias_initializer)
         self.kernel_regularizer = regularizers.get(kernel_regularizer)
         self.bias_regularizer = regularizers.get(bias_regularizer)
         self.activity_regularizer = regularizers.get(activity_regularizer)
@@ -75,37 +68,41 @@ class FlexibleSpacingConv1D(Layer):
                              'should be defined. Found `None`.')
         input_dim = input_shape[channel_axis]
         kernel_shape = self.kernel_size + (input_dim, self.filters)
+        #print(kernel_shape) ##(6,3,4)
         spacing_weight_shape = (self.pool_size,1)
         
         self.left_kernel = self.add_weight(shape=kernel_shape,
-                                           initializer=self.left_kernel_initializer,
+                                           initializer=self.kernel_initializer,
                                            name='left_kernel',
                                            regularizer=self.kernel_regularizer,
                                            constraint=self.kernel_constraint)
         self.left_bias = self.add_weight(shape=(self.filters,),
-                                         initializer=self.left_bias_initializer,
+                                         initializer=self.bias_initializer,
                                          name='left_bias',
                                          regularizer=self.bias_regularizer,
                                          constraint=self.bias_constraint)
+
         self.right_kernel = self.add_weight(shape=kernel_shape,
-                                           initializer=self.right_kernel_initializer,
+                                           initializer=self.kernel_initializer,
                                            name='right_kernel',
                                            regularizer=self.kernel_regularizer,
                                            constraint=self.kernel_constraint)
         self.right_bias = self.add_weight(shape=(self.filters,),
-                                         initializer=self.right_bias_initializer,
+                                         initializer=self.bias_initializer,
                                          name='right_bias',
                                          regularizer=self.bias_regularizer,
                                          constraint=self.bias_constraint)
+        
+        #self.spacing_weights = self.add_weight(shape=(self.pool_size, self.filters), initializer="ones", name='spacing_weights')
         self.spacing_weights = self.add_weight(shape=(self.pool_size, self.filters, self.filters),
-                                               initializer=self.spacing_weight_kernel_initializer,
+                                               initializer="ones",
                                                name='spacing_weights')
         self.input_dim = input_dim
                              
                              
     def call(self, inputs):
         import numpy as np
-        #import tensorflow as tf
+        import tensorflow as tf
     
         conv_left_output = self._get_conv_output(inputs,
                                                      kernel = self.left_kernel,
@@ -115,10 +112,26 @@ class FlexibleSpacingConv1D(Layer):
                                                      bias = self.right_bias)
         left_sparsify = self._sparsify(conv_left_output)
         right_sparsify = self._sparsify(conv_right_output)
-        right_max_pool = self._right_pool(right_sparsify)
+        right_sparsify_padded = K.temporal_padding(right_sparsify, padding = (0,self.pool_size-1))
+        right_max_pool = self._right_pool(right_sparsify_padded)
         min_merge = K.minimum(left_sparsify,right_max_pool)
-        boolean_filter = K.integer_greater(right_sparsify,0)
+        boolean_filter = K.integer_greater(right_sparsify_padded,0)
         
+        """
+        currently working on this section. Go to tensorflow backend and try to make it work out
+        Problem: original gives an error at spacing_weight_conv[:,i,:] = self.spacing_weights[:,i],  because left hand side is np array and right hand side is a tensor. Going to try to make left side a tensor, but will this make it slow?
+        nope, That doesn't work, "TypeError: 'Variable' object does not support item assignment"
+        next idea:  define a bunch of weights ( enough for the full volume), then element wise multiply  each filter with a matrix that is all zeros except for one row.
+        original:
+        #create the convolution to operate on the result of boolean_filter
+        spacing_weight_conv = np.zeros((self.pool_size, self.filters, self.filters)).astype("float32") ##
+        for i in range(self.filters):
+            spacing_weight_conv[:,i,:] = self.spacing_weights[:,i]
+        weight_conv_result = self._get_conv_output(boolean_filter,
+                                                   kernel = spacing_weight_conv,
+                                                   bias = np.zeros((self.filters,)).astype("float32"))
+        
+        """
         #create the convolution to operate on the result of boolean_filter
         mask = np.zeros( (self.pool_size, self.filters, self.filters), dtype = "float32")
         for i in range(self.filters):
@@ -127,21 +140,32 @@ class FlexibleSpacingConv1D(Layer):
         spacing_weight_conv = self.spacing_weights * mask
         #temp = K.zeros(shape = (self.filters))
         #temp = K.variable( tf.zeros( shape = (self.filters,), dtype = tf.as_dtype("float32")))
-        #temp = K.variable( np.zeros( shape = (self.filters)))
+        temp = K.variable( np.zeros( shape = (self.filters)))
+
+        """This line is weird, but if I did temp = K.zeros(shape = (self.filters,), dtype = "float32") then it gave me a weird error, so I copied the code for K.zeros
+        """
         weight_conv_result = self._get_conv_output(boolean_filter,
                                                    kernel = spacing_weight_conv,
-                                                   bias = K.zeros(shape = (self.filters)),
-                                                   dtype = "float32" )
+                                                   bias = temp,
+                                                   padding = 'valid' )
+        #print(boolean_filter.shape) ##(?,45,4)
+        # print(self.spacing_weight.shape) ##(7,1) #wrong
+        #print(self.left_kernel.shape) ##(6,3,4)
+        #print(inputs.shape) ##(?,50,3)
+        #print(left_sparsify.shape)
+        
+        #print(boolean_filter.shape)
+        #print(boolean_filter[0].shape)
         return( min_merge * weight_conv_result )
+        #return(right_max_pool)
 
-    def _get_conv_output(self,inputs,kernel,bias):
+    def _get_conv_output(self,inputs,kernel,bias,padding = 'same'):
         output = K.bias_add(K.conv1d(inputs,
                                      kernel,
                                      strides=1,
-                                     padding=self.padding,
-                                     data_format=self.data_format#,
-                                     #dilation_rate = None
-                                     ),
+                                     padding=padding,
+                                     data_format=self.data_format,
+                                     dilation_rate=1),
                                 bias,
                                 data_format=self.data_format)
         if (self.activation is not None):
@@ -150,14 +174,16 @@ class FlexibleSpacingConv1D(Layer):
         
     def _right_pool(self,inputs):
         inputs = K.expand_dims(inputs, 2)   # add dummy last dimension
-        pool_output = K.pool2d(inputs, pool_size=(1+(2*self.pool_size),1), strides=(1,1),
-                          padding='same', data_format='channels_last', pool_mode='max')
+        ##pool_output = K.pool2d(inputs, pool_size=(1+(2*self.pool_size),1), strides=(1,1),
+        pool_output = K.pool2d(inputs, pool_size=(self.pool_size,1), strides=(1,1),
+                          padding='valid', data_format='channels_last', pool_mode='max')
         return K.squeeze(pool_output, 2)  # remove dummy last dimension
 
     def _sparsify(self, inputs):
         ##Set entry to 0 unless it is max element in window of size 1+(2*self.pool_size)
         inputs = K.expand_dims(inputs, 2)   # add dummy last dimension
-        pool_output = K.pool2d(inputs, pool_size=(1+(2*self.pool_size),1), strides=(1,1),
+        ##pool_output = K.pool2d(inputs, pool_size=(1+(2*self.pool_size),1), strides=(1,1),
+        pool_output = K.pool2d(inputs, pool_size=(self.pool_size,1), strides=(1,1),
                           padding='same', data_format='channels_last', pool_mode='max')
         filter_output = K.integer_equal(inputs, pool_output)*inputs	## Tensorflow Backend modified to include integer_equal
         return K.squeeze(filter_output, 2)  # remove dummy last dimension
@@ -181,6 +207,8 @@ class FlexibleSpacingConv1D(Layer):
         }
         base_config = super(FlexibleSpacingConv1D, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
+
+
 
 
 class _Conv(Layer):
