@@ -3620,6 +3620,53 @@ def conv3d_transpose(x, kernel, output_shape, strides=(1, 1, 1),
     return x
 
 
+def max_pool_with_argmax_1d(x, pool_size, strides=1,
+           padding='valid', argmax_format='relative', data_format=None):
+    """2D Pooling.
+
+    # Arguments
+        x: Tensor or variable.
+        pool_size: integer.
+        strides: integer.
+        padding: string, `"same"` or `"valid"`.
+        data_format: string, `"channels_last"` or `"channels_first"`.
+        pool_mode: string, `"max"` or `"avg"`.
+        argmax_format, `"absolute"' or `"relative"'
+
+    # Returns
+        A tensor, result of 2D pooling.
+
+    # Raises
+        ValueError: if `data_format` is neither `"channels_last"` or `"channels_first"`.
+        ValueError: if `pool_mode` is neither `"max"` or `"avg"`.
+    """
+    if data_format is None:
+        data_format = image_data_format()
+    if data_format not in {'channels_first', 'channels_last'}:
+        raise ValueError('Unknown data_format ' + str(data_format))
+
+    x = expand_dims(x,2)#add dummy dimension
+    pool_size = (pool_size,1)
+    strides = (strides,1)
+    x, tf_data_format = _preprocess_conv2d_input(x, data_format)
+    padding = _preprocess_padding(padding)
+    if tf_data_format == 'NHWC':
+        strides = (1,) + strides + (1,)
+        pool_size = (1,) + pool_size + (1,)
+    else:
+        strides = (1, 1) + strides
+        pool_size = (1, 1) + pool_size
+    x = tf.nn.max_pool_with_argmax(x, pool_size, strides,
+                       padding=padding)
+    if data_format == 'channels_first' and tf_data_format == 'NHWC':
+        x[0] = tf.transpose(x[0], (0, 3, 1, 2))  # NHWC -> NCHW
+    if argmax_format == 'relative':
+        absolute_positions = np.array( range(x[1].shape[1]),dtype='int64').reshape( (x[1].shape[1],1,1) ) * np.ones(x[1].shape[1:])
+        relative_positions = x[1] - constant(absolute_positions,dtype = 'int64') 
+        relative_positions = squeeze(relative_positions,2) #remove dummy dimension
+    return (squeeze(x[0],2), relative_positions if argmax_format=='relative' else squeeze(x[1],2))
+
+
 def pool2d(x, pool_size, strides=(1, 1),
            padding='valid', data_format=None,
            pool_mode='max'):
