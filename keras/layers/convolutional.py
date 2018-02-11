@@ -69,6 +69,193 @@ class FlexibleSpacingConv1D(Layer):
     def __init__(self,
                  filters,
                  kernel_size,
+                 spacing_width,
+                 padding='valid',
+                 data_format=None,
+                 strides = 1,
+                 activation= 'relu',
+                 kernel_initializer='glorot_uniform',
+                 bias_initializer='zeros',
+                 kernel_regularizer=None,
+                 bias_regularizer=None,
+                 activity_regularizer=None,
+                 kernel_constraint=None,
+                 bias_constraint=None,
+                 **kwargs):
+        super(FlexibleSpacingConv1D,self).__init__(**kwargs)
+        self.filters = filters
+        self.kernel_size = conv_utils.normalize_tuple(kernel_size, 1, 'kernel_size')
+        self.spacing_width = spacing_width
+        self.padding = conv_utils.normalize_padding(padding)
+        self.strides = conv_utils.normalize_tuple(strides, 1, 'strides')
+        self.dilation_rate = conv_utils.normalize_tuple(1, 1, 'dilation_rate')
+        self.data_format = conv_utils.normalize_data_format(data_format)
+        self.activation = activations.get(activation)
+        self.kernel_initializer = initializers.get(kernel_initializer)
+        self.bias_initializer = initializers.get(bias_initializer)
+        self.kernel_regularizer = regularizers.get(kernel_regularizer)
+        self.bias_regularizer = regularizers.get(bias_regularizer)
+        self.activity_regularizer = regularizers.get(activity_regularizer)
+        self.kernel_constraint = constraints.get(kernel_constraint)
+        self.bias_constraint = constraints.get(bias_constraint)
+        self.input_spec = InputSpec(ndim=3)
+
+    def build(self, input_shape):
+        if self.data_format == 'channels_first':
+            channel_axis = 1
+        else:
+            channel_axis = -1
+        if input_shape[channel_axis] is None:
+            raise ValueError('The channel dimension of the inputs '
+                             'should be defined. Found `None`.')
+        input_dim = input_shape[channel_axis]
+        kernel_shape = self.kernel_size + (input_dim, self.filters)
+        #print(kernel_shape) ##(6,3,4)
+        spacing_weight_shape = (self.spacing_width,1)
+        
+        self.center_kernel = self.add_weight(shape=kernel_shape,
+                                           initializer=self.kernel_initializer,
+                                           name='center_kernel',
+                                           regularizer=self.kernel_regularizer,
+                                           constraint=self.kernel_constraint)
+        self.center_bias = self.add_weight(shape=(self.filters,),
+                                         initializer=self.bias_initializer,
+                                         name='center_bias',
+                                         regularizer=self.bias_regularizer,
+                                         constraint=self.bias_constraint)
+        self.flank_kernel = self.add_weight(shape=kernel_shape,
+                                           initializer=self.kernel_initializer,
+                                           name='flank_kernel',
+                                           regularizer=self.kernel_regularizer,
+                                           constraint=self.kernel_constraint)
+        self.flank_bias = self.add_weight(shape=(self.filters,),
+                                         initializer=self.bias_initializer,
+                                         name='flank_bias',
+                                         regularizer=self.bias_regularizer,
+                                         constraint=self.bias_constraint)
+        self.center_weights = self.add_weight(shape=(1, self.filters),
+                                               initializer='he_uniform',
+                                               name='center_weights')
+        #self.flank_weights = self.add_weight(shape=(1, self.filters),
+        #                                       initializer="ones",
+        #                                       name='flank_weights')
+        self.spacing_weights = self.add_weight(shape=(self.spacing_width, self.filters, self.filters),
+                                               initializer='he_uniform',
+                                               name='flank_weights')
+        print('output shape', self.compute_output_shape(input_shape))
+        self.output_bias = self.add_weight(shape = ( self.compute_output_shape(input_shape)[-1],),
+                                           initializer = 'ones',
+                                           name = 'output_bias')
+        self.input_dim = input_dim
+                             
+    def my_init(shape,dtype = None):
+        import numpy as np
+        weights = np.zeros(shape)
+        weights[0,1]=1
+        return(K.variable(weights))
+                            
+    def call(self, inputs):
+        import numpy as np
+        conv_center_output = self._get_conv_output(inputs,
+                                                     kernel = self.center_kernel,
+                                                     bias = self.center_bias,
+                                                     padding='valid')
+        conv_flank_output = self._get_conv_output(inputs,
+                                                     kernel = self.flank_kernel,
+                                                     bias = self.flank_bias,
+                                                     padding='valid')
+        print('conv center shape',conv_center_output.shape)
+        print('center weights shape',self.center_weights.shape)
+        center_output = conv_center_output * self.center_weights
+        print('center output shape',center_output.shape)        
+
+        mask = np.zeros( (self.spacing_width, self.filters, self.filters), dtype = "float32")
+        for i in range(self.filters):
+            mask[:,i,i] = np.ones(self.spacing_width)
+        mask = K.constant(mask, dtype = "float32")
+        spacing_weight_conv = self.spacing_weights * mask
+        helper_flank_conv = self._get_conv_output(conv_flank_output,
+                                                   kernel = spacing_weight_conv,
+                                                   bias = K.zeros(shape = (self.filters)),
+                                                   padding = 'valid' )
+        """ 
+        helper_conv_kernel = np.zeros((self.spacing_width,self.filters,self.filters), dtype = 'float32')
+        for i in range(self.filters):
+            helper_conv_kernel[:,i,i] = np.ones(self.spacing_width)
+        helper_conv_kernel = K.constant(helper_conv_kernel,dtype = 'float32')
+        print('flank conv shape',conv_flank_output.shape)
+        print('helper conv shape',helper_conv_kernel.shape)
+        helper_flank_conv = self._get_conv_output(conv_flank_output,
+                                                  kernel = helper_conv_kernel,
+                                                  bias = K.zeros(shape = (self.filters)),
+                                                  padding = 'valid')
+        """
+        print('helper conv shape',helper_flank_conv.shape)
+        flank_output = K.temporal_padding(helper_flank_conv, padding = (0,self.spacing_width-1))
+        print('flank padded shape',flank_output.shape)
+        #output = center_output + flank_output + self.output_bias
+        output = K.bias_add(center_output + flank_output, self.output_bias)
+        print('output shape', (center_output + flank_output).shape)
+        print('bias shape', self.output_bias.shape)
+        if self.activation is not None:
+            output = self.activation(output)
+        return(output)
+        
+    def _get_conv_output(self,inputs,kernel,bias,padding = 'same'):
+        output = K.bias_add(K.conv1d(inputs,
+                                     kernel,
+                                     strides=1,
+                                     padding=padding,
+                                     data_format=self.data_format,
+                                     dilation_rate=1),
+                                bias,
+                                data_format=self.data_format)
+        if (self.activation is not None):
+            output = self.activation(output)
+        return(output)
+        
+    def compute_output_shape(self, input_shape):
+        ##copied and pasted exactly from regular convolutional layer
+        #print("input shape", input_shape)
+        if self.data_format == 'channels_last':                                 
+            space = input_shape[1:-1]                                           
+            new_space = []                                                      
+            for i in range(len(space)):                                         
+                new_dim = conv_utils.conv_output_length(                        
+                    space[i],                                                   
+                    self.kernel_size[i],                                        
+                    padding=self.padding,                                       
+                    stride=self.strides[i],                                     
+                    dilation=self.dilation_rate[i])                             
+                new_space.append(new_dim)
+            #print("output shape", (input_shape[0],) + tuple(new_space) + (self.filters,) )                                       
+            return (input_shape[0],) + tuple(new_space) + (self.filters,)       
+        if self.data_format == 'channels_first':                                
+            space = input_shape[2:]                                             
+            new_space = []                                                      
+            for i in range(len(space)):                                         
+                new_dim = conv_utils.conv_output_length(                        
+                    space[i],                                                   
+                    self.kernel_size[i],                                        
+                    padding=self.padding,                                       
+                    stride=self.strides[i],                                     
+                    dilation=self.dilation_rate[i])                             
+                new_space.append(new_dim)                                       
+            return (input_shape[0], self.filters) + tuple(new_space) 
+
+    def get_config(self):
+        ##  I quickly did this so it would run. Better double check to make sure it's right
+        config = {
+                'spacing_width': self.spacing_width
+        }
+        base_config = super(FlexibleSpacingConv1D, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+
+class FlexibleSpacingConv1D_v2(Layer):
+    def __init__(self,
+                 filters,
+                 kernel_size,
                  pool_size,
                  padding='valid',
                  data_format=None,
