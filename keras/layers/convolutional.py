@@ -142,7 +142,7 @@ class FlexibleSpacingConv1D(Layer):
         self.spacing_weights = self.add_weight(shape=(self.spacing_width, self.filters, self.filters),
                                                initializer='he_uniform',
                                                name='flank_weights')
-        print('output shape', self.compute_output_shape(input_shape))
+        #print('output shape', self.compute_output_shape(input_shape))
         self.output_bias = self.add_weight(shape = ( self.compute_output_shape(input_shape)[-1],),
                                            initializer = 'ones',
                                            name = 'output_bias')
@@ -164,10 +164,10 @@ class FlexibleSpacingConv1D(Layer):
                                                      kernel = self.flank_kernel,
                                                      bias = self.flank_bias,
                                                      padding='valid')
-        print('conv center shape',conv_center_output.shape)
-        print('center weights shape',self.center_weights.shape)
+        #print('conv center shape',conv_center_output.shape)
+        #print('center weights shape',self.center_weights.shape)
         center_output = conv_center_output * self.center_weights
-        print('center output shape',center_output.shape)        
+        #print('center output shape',center_output.shape)        
 
         mask = np.zeros( (self.spacing_width, self.filters, self.filters), dtype = "float32")
         for i in range(self.filters):
@@ -183,20 +183,20 @@ class FlexibleSpacingConv1D(Layer):
         for i in range(self.filters):
             helper_conv_kernel[:,i,i] = np.ones(self.spacing_width)
         helper_conv_kernel = K.constant(helper_conv_kernel,dtype = 'float32')
-        print('flank conv shape',conv_flank_output.shape)
-        print('helper conv shape',helper_conv_kernel.shape)
+        #print('flank conv shape',conv_flank_output.shape)
+        #print('helper conv shape',helper_conv_kernel.shape)
         helper_flank_conv = self._get_conv_output(conv_flank_output,
                                                   kernel = helper_conv_kernel,
                                                   bias = K.zeros(shape = (self.filters)),
                                                   padding = 'valid')
         """
-        print('helper conv shape',helper_flank_conv.shape)
+        #print('helper conv shape',helper_flank_conv.shape)
         flank_output = K.temporal_padding(helper_flank_conv, padding = (0,self.spacing_width-1))
-        print('flank padded shape',flank_output.shape)
+        #print('flank padded shape',flank_output.shape)
         #output = center_output + flank_output + self.output_bias
         output = K.bias_add(center_output + flank_output, self.output_bias)
-        print('output shape', (center_output + flank_output).shape)
-        print('bias shape', self.output_bias.shape)
+        #print('output shape', (center_output + flank_output).shape)
+        #print('bias shape', self.output_bias.shape)
         if self.activation is not None:
             output = self.activation(output)
         return(output)
