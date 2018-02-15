@@ -1877,11 +1877,11 @@ def concatenate(tensors, axis=-1):
             axis %= rank
         else:
             axis = 0
-
-    if py_all([is_sparse(x) for x in tensors]):
-        return tf.sparse_concat(axis, tensors)
-    else:
-        return tf.concat([to_dense(x) for x in tensors], axis)
+    #no longer works for sparse tensors
+    #if py_all([is_sparse(x) for x in tensors]):
+    #    return tf.sparse_concat(axis, tensors)
+    #else:
+    return tf.concat([to_dense(x) for x in tensors], axis)
 
 
 def reshape(x, shape):

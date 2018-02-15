@@ -143,7 +143,7 @@ class FlexibleSpacingConv1D(Layer):
                                                initializer='he_uniform',
                                                name='flank_weights')
         #print('output shape', self.compute_output_shape(input_shape))
-        self.output_bias = self.add_weight(shape = ( self.compute_output_shape(input_shape)[-1],),
+        self.output_bias = self.add_weight(shape = ( int(self.compute_output_shape(input_shape)[-1]/2),),
                                            initializer = 'ones',
                                            name = 'output_bias')
         self.input_dim = input_dim
@@ -194,7 +194,15 @@ class FlexibleSpacingConv1D(Layer):
         flank_output = K.temporal_padding(helper_flank_conv, padding = (0,self.spacing_width-1))
         #print('flank padded shape',flank_output.shape)
         #output = center_output + flank_output + self.output_bias
-        output = K.bias_add(center_output + flank_output, self.output_bias)
+        #print('center_output shape', center_output.shape)
+        #print('flank_output shape', flank_output.shape)
+        #pre_output = center_output + flank_output
+        #print('output bias shape', self.output_bias.shape)
+        pre_output = K.bias_add(center_output + flank_output, self.output_bias)
+        #print('pre_output shape',pre_output.shape)
+        #print('conv_center shape',conv_center_output.shape)
+        output = K.concatenate([pre_output,conv_center_output],axis=-1)
+        #print('output shape', output.shape)
         #print('output shape', (center_output + flank_output).shape)
         #print('bias shape', self.output_bias.shape)
         if self.activation is not None:
@@ -229,7 +237,8 @@ class FlexibleSpacingConv1D(Layer):
                     dilation=self.dilation_rate[i])                             
                 new_space.append(new_dim)
             #print("output shape", (input_shape[0],) + tuple(new_space) + (self.filters,) )                                       
-            return (input_shape[0],) + tuple(new_space) + (self.filters,)       
+            print('computed output shape',(input_shape[0],) + tuple(new_space) + (self.filters*2,) )
+            return (input_shape[0],) + tuple(new_space) + (self.filters*2,)       
         if self.data_format == 'channels_first':                                
             space = input_shape[2:]                                             
             new_space = []                                                      
